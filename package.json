@@ -1,0 +1,81 @@
+{
+  "name": "nest-rest-generic-typeorm",
+  "version": "1.0.0",
+  "description": "Generic NestJS base classes (Model/Service/Controller) for building advanced REST CRUD APIs with TypeORM: dynamic filtering, eager relations, ordering, pagination, hierarchical data, transactions, caching and human-friendly DB error handling. TypeScript port of the Laravel package rest-generic-class.",
+  "author": "Charlietyn",
+  "license": "MIT",
+  "keywords": [
+    "nestjs",
+    "typeorm",
+    "rest",
+    "crud",
+    "generic",
+    "repository",
+    "filtering",
+    "pagination",
+    "hierarchy",
+    "cache"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build",
+    "lint": "eslint \"src/**/*.ts\" --fix",
+    "test": "jest",
+    "test:cov": "jest --coverage"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^9.0.0 || ^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^9.0.0 || ^10.0.0 || ^11.0.0",
+    "@nestjs/typeorm": "^9.0.0 || ^10.0.0 || ^11.0.0",
+    "typeorm": "^0.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/cache-manager": {
+      "optional": true
+    },
+    "cache-manager": {
+      "optional": true
+    },
+    "exceljs": {
+      "optional": true
+    },
+    "pdfkit": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.0"
+  },
+  "devDependencies": {
+    "@nestjs/common": "^10.0.0",
+    "@nestjs/core": "^10.0.0",
+    "@nestjs/testing": "^10.0.0",
+    "@nestjs/typeorm": "^10.0.0",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "exceljs": "^4.4.0",
+    "jest": "^29.5.0",
+    "pdfkit": "^0.15.0",
+    "reflect-metadata": "^0.1.13",
+    "rxjs": "^7.8.0",
+    "sqlite3": "^5.1.0",
+    "ts-jest": "^29.1.0",
+    "typeorm": "^0.3.17",
+    "typescript": "^5.2.0"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": ".",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": { "^.+\\.(t|j)s$": "ts-jest" },
+    "collectCoverageFrom": ["src/**/*.ts"],
+    "testEnvironment": "node"
+  }
+}
