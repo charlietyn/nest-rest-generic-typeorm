@@ -1,5 +1,5 @@
 /**
- * nest-rest-generic-typeorm — public API barrel.
+ * @charlietyn/nest-rest-typeorm — public API barrel.
  * TypeScript/TypeORM port of the Laravel package `rest-generic-class`.
  *
  * @author Charlietyn
@@ -14,6 +14,7 @@ export { RestController } from './base/rest.controller';
 export { GenericRestModule, GenericRestModuleOptions, RGC_CACHE_STORE } from './module/generic-rest.module';
 export {
   RestGenericConfig,
+  RestGenericConfigInput,
   FilteringConfig,
   CacheConfig,
   REST_GENERIC_CONFIG,
@@ -46,6 +47,36 @@ export {
   CacheManagerLike,
   CacheContext,
 } from './cache/cache.service';
+
+// Relations (ManagesRelations port)
+export {
+  OneToManyConfig,
+  ManyToManyConfig,
+  OneToManyConfigMap,
+  ManyToManyConfigMap,
+  RelationMutationConfig,
+  ResolvedRelationConfig,
+  RelationType,
+  ModelClass,
+  isManyToMany,
+} from './relations/relation-config';
+export { RelationManager } from './relations/relation-manager';
+export {
+  registerDataSource,
+  findDataSourceFor,
+  resolveDataSource,
+  resolveRepository,
+} from './relations/datasource-registry';
+export {
+  injectParams,
+  isBulkScenario,
+  resolveRelationConfig,
+  extractMutationData,
+  Scenario,
+  RelationName,
+  SCENARIO_PARAM,
+  RELATION_PARAM,
+} from './relations/scenario';
 
 // Hierarchy
 export { HierarchyEngine } from './hierarchy/hierarchy.engine';

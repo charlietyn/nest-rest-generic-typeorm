@@ -1,4 +1,11 @@
-import { Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { BaseEntity } from '../base/base.entity';
 import { Product } from './product.entity';
 
@@ -21,7 +28,11 @@ export class Category extends BaseEntity {
   @Column({ name: 'parent_id', type: 'int', nullable: true })
   parent_id!: number | null;
 
+  // `@JoinColumn` binds the relation to the existing `parent_id` column. Without
+  // it TypeORM would add a second, never-populated FK (`parentId`), leaving
+  // `parent`/`children` permanently empty and out of sync with HIERARCHY_FIELD_ID.
   @ManyToOne(() => Category, (c) => c.children)
+  @JoinColumn({ name: 'parent_id' })
   parent!: Category;
 
   @OneToMany(() => Category, (c) => c.parent)

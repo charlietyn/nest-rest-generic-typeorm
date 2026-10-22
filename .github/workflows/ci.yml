@@ -1,0 +1,59 @@
+name: CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['24', '26']
+        nest: ['11', '12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - name: Select NestJS compatibility target
+        if: matrix.nest == '11'
+        run: npm install --no-save --package-lock=false @nestjs/common@11 @nestjs/core@11 @nestjs/testing@11 @nestjs/platform-express@11 @nestjs/typeorm@11
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npm run package:check
+      - run: npm run test:package
+        env:
+          NEST_MAJOR: ${{ matrix.nest }}
+
+  minimum-runtime:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        nest: ['11', '12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+      - run: npm run test:package
+        env:
+          NEST_MAJOR: ${{ matrix.nest }}

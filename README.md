@@ -1,375 +1,224 @@
-# nest-rest-generic-typeorm
+# @charlietyn/nest-rest-typeorm
 
-> Generic NestJS base classes (**Model / Service / Controller**) for building advanced REST CRUD APIs with **TypeORM**.
-> TypeScript port of the Laravel package [`rest-generic-class`](https://github.com/charlietyn/rest-generic-class) — same HTTP contract, same feature set.
+Biblioteca reutilizable de CRUD REST para **NestJS 11/12 y TypeORM**. Proporciona
+entidades base, servicios y controladores heredables sin abrir conexiones ni arrancar
+servidores al importarse. Conserva el contrato de consultas del port de `rest-generic-class`.
 
-Build a fully-featured CRUD endpoint (dynamic filtering, eager relations, ordering, pagination, hierarchical trees, transactions, versioned caching and human-friendly DB errors) in **three small files**.
+## Características
 
----
+- Filtros AND/OR y de relaciones, selección de columnas y ordenación.
+- Relaciones permitidas por `RELATIONS`, paginación por offset/cursor y jerarquías.
+- CRUD individual y por lotes; relaciones uno-a-muchos y muchos-a-muchos.
+- Caché opcional con versiones y adaptadores asíncronos.
+- Roles, restricciones de escritura por campo y traducción de errores de BD.
+- Exportación Excel/PDF opcional con `exceljs` y `pdfkit`.
 
-## ✨ Features
+## Compatibilidad
 
-| Capability | Supported |
+| Componente | Requisito |
 |---|---|
-| Dynamic filtering (`oper` AND/OR, nested, relation filters) | ✅ |
-| Operators `= != < > <= >= like ilike in between null date regexp …` | ✅ |
-| Ordering (`orderby`, dot-notation relations) | ✅ |
-| Column projection (`select`) + per-relation field selection (`rel:f1,f2`) | ✅ |
-| Eager relations whitelist (`RELATIONS`) + nested (`a.b.c`) | ✅ |
-| Offset pagination + cursor / infinite scroll (`infinity`) | ✅ |
-| Hierarchical data (adjacency list, 5 filter modes) | ✅ |
-| Transactions on every write | ✅ |
-| Bulk create / `update_multiple` / `deleteById` | ✅ |
-| Versioned cache (vary headers, per-method TTL, relation versions) | ✅ |
-| Friendly DB error parsing (PostgreSQL + MySQL) | ✅ |
-| DTO validation (class-validator) | ✅ |
+| Node.js de consumidores | 22.12 o posterior; LTS recomendado |
+| NestJS common/core | 11.x o 12.x, ambos de la misma major |
+| TypeORM | ^0.3.31 |
+| @nestjs/typeorm | 11.x para Nest 11, 12.x para Nest 12; opcional si inyectas repositorios manualmente |
+| reflect-metadata / rxjs | ^0.2.2 / ^7.8.2 |
+| Desarrollo y Jest con Nest 12 | Node.js 24.9+; npm test activa VM modules |
+| TypeScript | Compilado y probado con 5.9; declaraciones incluidas |
 
----
+Se distribuye CommonJS, consumible desde `require` o `import` de Node moderno,
+incluso con los peers ESM de NestJS 12. No hay dos runtimes ni compilación dual.
+Si una plataforma desactiva `require(esm)`, debes habilitarlo siguiendo sus instrucciones.
+NestJS 9/10 y Node.js 20 quedan fuera del contrato de este paquete scoped.
 
-## 📦 Installation
+## Instalación
 
-```bash
-npm install nest-rest-generic-typeorm
-# peer deps (already in a typical Nest + TypeORM project)
-npm install @nestjs/common @nestjs/core @nestjs/typeorm typeorm reflect-metadata
+Una vez publicada la versión:
+
+```sh
+npm install @charlietyn/nest-rest-typeorm @nestjs/common@12 @nestjs/core@12 @nestjs/typeorm@12 typeorm@^0.3.31 reflect-metadata rxjs
+# Con NestJS 11, usa @11 para los tres paquetes @nestjs anteriores.
+# Instala también el driver de tu aplicación, por ejemplo PostgreSQL:
+npm install pg
 ```
 
----
+Antes de publicar, genera `npm pack` e instala el `.tgz` con `npm install /ruta/al/paquete.tgz`.
+La preparación del repositorio no publica automáticamente ninguna versión.
 
-## 🚀 Quick start (3-file pattern)
+## Inicio rápido
 
-### 1. Entity — extend `BaseEntity`, declare the whitelist
+Activa `experimentalDecorators` y `emitDecoratorMetadata` en tu aplicación.
+Ejemplo autocontenido en `products.module.ts`:
 
 ```typescript
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
-import { BaseEntity } from 'nest-rest-generic-typeorm';
+import 'reflect-metadata';
+import { Controller, Inject, Injectable, Module, Optional } from '@nestjs/common';
+import { InjectRepository, TypeOrmModule } from '@nestjs/typeorm';
+import { Column, Entity, PrimaryGeneratedColumn, Repository } from 'typeorm';
+import {
+  BaseEntity, BaseService, RestController, DEFAULT_CONFIG,
+  REST_GENERIC_CONFIG, RgcCacheService, type RestGenericConfig,
+} from '@charlietyn/nest-rest-typeorm';
 
 @Entity('products')
 export class Product extends BaseEntity {
   static readonly MODEL = 'product';
-  static readonly RELATIONS = ['category'] as const; // security whitelist
-
   @PrimaryGeneratedColumn() id!: number;
   @Column() name!: string;
-  @Column('decimal') price!: number;
-  @Column({ name: 'category_id', type: 'int', nullable: true }) category_id!: number | null;
-  @ManyToOne(() => Category, (c) => c.products) category!: Category;
+  @Column('float') price!: number;
 }
-```
-
-### 2. Service — extend `BaseService<T>`
-
-```typescript
-import { Injectable, Inject, Optional } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { BaseService, REST_GENERIC_CONFIG, RestGenericConfig, DEFAULT_CONFIG, RgcCacheService } from 'nest-rest-generic-typeorm';
-import { Product } from './product.entity';
 
 @Injectable()
 export class ProductService extends BaseService<Product> {
   constructor(
     @InjectRepository(Product) repo: Repository<Product>,
     @Optional() @Inject(REST_GENERIC_CONFIG) config?: RestGenericConfig,
-    @Optional() cache?: RgcCacheService,
-  ) {
-    super(repo, config ?? DEFAULT_CONFIG, cache);
-  }
+    @Optional() @Inject(RgcCacheService) cache?: RgcCacheService,
+  ) { super(repo, config ?? DEFAULT_CONFIG, cache); }
 }
-```
-
-### 3. Controller — extend `RestController<T>`
-
-```typescript
-import { Controller } from '@nestjs/common';
-import { RestController } from 'nest-rest-generic-typeorm';
-import { Product } from './product.entity';
-import { ProductService } from './product.service';
 
 @Controller('products')
 export class ProductController extends RestController<Product> {
   constructor(service: ProductService) { super(service); }
 }
+
+@Module({
+  imports: [TypeOrmModule.forFeature([Product])],
+  providers: [ProductService], controllers: [ProductController],
+  exports: [ProductService],
+})
+export class ProductsModule {}
 ```
 
-### 4. Wire it up
+En el módulo raíz de tu aplicación:
 
 ```typescript
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { GenericRestModule } from 'nest-rest-generic-typeorm';
+import { GenericRestModule } from '@charlietyn/nest-rest-typeorm';
+import { ProductsModule } from './products.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forRoot({ /* ... */ }),
+    TypeOrmModule.forRoot({
+      type: 'postgres', url: process.env.DATABASE_URL,
+      autoLoadEntities: true, synchronize: false,
+    }),
     GenericRestModule.forRoot({ config: { cache: { enabled: true } } }),
-    TypeOrmModule.forFeature([Product]),
+    ProductsModule,
   ],
-  providers: [ProductService],
-  controllers: [ProductController],
 })
 export class AppModule {}
 ```
 
-You now have:
+Tu aplicación valida `DATABASE_URL`, crea tablas con migraciones y arranca Nest.
+La biblioteca no exige variables de entorno. Declara constructores explícitos y repite
+sus decoradores `@Optional()` en subclases: NestJS 12 no hereda esos marcadores.
 
-```
-GET    /products                 → list (filter/sort/paginate/relations/hierarchy)
-GET    /products/get/one         → first matching record
-GET    /products/:id             → single record (relations/select)
-POST   /products                 → create (single, or bulk via {product:[...]})
-PUT    /products/:id             → update
-PUT    /products/update/multiple → bulk update
-DELETE /products/:id             → delete
-DELETE /products/delete/by-id    → delete many ({ids:[...]})
-GET    /products/export/data     → export payload (data + columns)
-```
-
----
-
-## 🔎 Query language
-
-### `oper` — dynamic filtering
-
-Conditions are strings `"field|operator|value"` grouped by `and` / `or` blocks. Blocks nest, and any non-logical key is a **relation filter** (the equivalent of Eloquent `whereHas`).
-
-```jsonc
-// price >= 50 AND status = active
-?oper={"and":["price|>=|50","status|=|active"]}
-
-// name = iPhone OR name = Pixel
-?oper={"or":["name|=|iPhone","name|=|Pixel"]}
-
-// nested: active AND (price<100 OR featured=true)
-?oper={"and":["status|=|active",{"or":["price|<|100","featured|=|true"]}]}
-
-// relation filter (whereHas): products whose category name is "Phones"
-?oper={"category":{"and":["name|=|Phones"]}}&relations=["category"]
-
-// nested relation path
-?oper={"user.roles":{"and":["name|=|admin"]}}
+```typescript
+await productService.create({ name: 'Libro', price: 20 });
+await productService.listAll({
+  oper: { and: ['price|>=|10', 'price|<=|50'] },
+  orderby: [{ price: 'asc' }], pagination: { page: 1, pageSize: 20 },
+});
+await productService.update({ price: 25 }, 1);
+await productService.show({}, 1);
 ```
 
-**Operators:** `=`, `!=`, `<`, `>`, `<=`, `>=`, `like`, `not like`, `ilike`, `not ilike`,
-`in`, `not in`, `between`, `not between`, `null`, `not null`, `date`, `not date`, `regexp`, `not regexp`.
-Comma-separated values become arrays (`status|in|active,pending`).
+El controlador ofrece GET/POST en `/products`, GET en `/products/get/one`, GET/PUT/DELETE
+en `/products/:id`, PUT en `/products/update/multiple` y DELETE en `/products/delete/by-id`.
+Los parámetros complejos de query se envían como JSON codificado para la URL.
+Más ejemplos: [referencia de consultas](docs/QUERY-REFERENCE.md) y `src/example`.
 
-### `relations` — eager loading + field selection
-
-```jsonc
-?relations=["category"]                      // load relation
-?relations=["category:id,name"]              // select relation fields
-?relations=["user.roles:id,name"]            // nested + fields
-?relations=all                               // every whitelisted relation
-```
-
-### `orderby`
-
-```jsonc
-?orderby=[{"price":"desc"},{"name":"asc"}]
-?orderby=[{"category.name":"asc"}]           // order by relation field
-```
-
-### `select`
-
-```jsonc
-?select=["id","name","price"]
-```
-
-### `pagination`
-
-```jsonc
-?pagination={"page":1,"pageSize":20}                 // offset
-?pagination={"infinity":true,"pageSize":20,"cursor":"123"}  // keyset / infinite scroll
-```
-
-### `hierarchy` (adjacency list)
-
-Declare `static HIERARCHY_FIELD_ID = 'parent_id'` on the entity.
-
-```jsonc
-?hierarchy=true
-?hierarchy={"filter_mode":"with_descendants","children_key":"children","max_depth":3}
-```
-
-Filter modes: `match_only`, `with_ancestors`, `with_descendants`, `full_branch`, `root_filter`.
-
----
-
-## 🧠 Caching
-
-Versioned, logical invalidation — no key scanning. Enable via config and (optionally) plug a `cache-manager` store:
+## Configuración
 
 ```typescript
 GenericRestModule.forRoot({
-  config: { cache: { enabled: true, ttlByMethod: { list_all: 120 } } },
-  cacheStore: myCacheManagerStore, // optional; defaults to in-memory
+  config: {
+    filtering: { maxDepth: 5, maxConditions: 100, strictRelations: true },
+    cache: { enabled: false, ttl: 60, ttlByMethod: { get_one: 30 } },
+  },
 });
 ```
 
-- `?cache=false` disables caching for one request.
-- `?cache_ttl=300` overrides TTL for one request.
-- Every successful write bumps the model's cache version (and any `CACHE_INVALIDATES`).
+`RestGenericConfigInput` admite bloques parciales. `mergeConfig()` combina con
+`DEFAULT_CONFIG`: reemplaza arrays y combina `ttlByMethod` por clave. TTL está en segundos.
+El store predeterminado vive en memoria, local a cada proceso. Para compartir caché,
+pasa `cacheStore: new CacheManagerStore(cacheManager)` o un `RgcCacheStore` propio.
+La aplicación configura e inyecta ese backend.
 
-### Redis (store-agnostic, like Laravel's `Cache::store()`)
+Las entidades pueden declarar `MODEL`, `RELATIONS`, `HIERARCHY_FIELD_ID`, `CACHE_INVALIDATES`,
+`FIELD_KEY_UPDATE` y `FIELDS_BY_ROLE`. Los controladores habilitan relaciones de escritura
+mediante `oneToManyConfig` / `manyToManyConfig`.
 
-The store is fully async, so out-of-process backends like **Redis** invalidate
-correctly (the per-model version is read back from the store on every request).
-Plug a Redis-backed `cache-manager` store via the bundled `CacheManagerStore`
-adapter, which also bridges the TTL unit (this library speaks **seconds**,
-cache-manager speaks **milliseconds**). Build the store first, then pass the
-adapter to `forRoot`:
+## API pública
 
-```typescript
-// cache.provider.ts
-import { caching } from 'cache-manager';
-import { redisStore } from 'cache-manager-ioredis-yet';
-import { CacheManagerStore } from 'nest-rest-generic-typeorm';
+Importa siempre desde `@charlietyn/nest-rest-typeorm`; las subrutas internas están cerradas.
 
-export async function createRedisRgcStore() {
-  const cache = await caching(await redisStore({ host: 'localhost', port: 6379 }));
-  return new CacheManagerStore(cache); // seconds → ms handled here
-}
+| Área | Exportaciones |
+|---|---|
+| Base | BaseEntity, BaseService, RestController, EntityClass, getStatic, getDeclaredRelations |
+| Configuración | GenericRestModule, GenericRestModuleOptions, REST_GENERIC_CONFIG, RGC_CACHE_STORE, DEFAULT_CONFIG, DEFAULT_ALLOWED_OPERATORS, mergeConfig, RestGenericConfigInput, RestGenericConfig, FilteringConfig, CacheConfig |
+| Consultas | TypeormQueryTranslator, parseConditionString, decodeValue, toBetweenArray, maybeJson, parseRelationWithFields, normalizeRelations, ParsedCondition, ParsedRelation |
+| Contratos | FilterParams, OrderByEntry, LogicalOperator, OperNode, OperCondition, PaginationParams, HierarchyConfig, HierarchyFilterMode, DataResult, PaginatedResult, CursorPaginatedResult, WriteResult, ValidationErrors |
+| Caché | RgcCacheService, RgcCacheStore, InMemoryCacheStore, CacheManagerStore, CacheManagerLike, CacheContext |
+| Relaciones | RelationManager, OneToManyConfig, ManyToManyConfig, OneToManyConfigMap, ManyToManyConfigMap, RelationMutationConfig, ResolvedRelationConfig, RelationType, ModelClass, isManyToMany |
+| Escenarios | registerDataSource, findDataSourceFor, resolveDataSource, resolveRepository, injectParams, isBulkScenario, resolveRelationConfig, extractMutationData, Scenario, RelationName, SCENARIO_PARAM, RELATION_PARAM |
+| Jerarquías/exportación | HierarchyEngine, ExportService, ExportFile, ExportOptions |
+| Seguridad/errores | Roles, RolesGuard, ROLES_KEY, getDeniedFieldsForUser, extractUserRoles, isSuperuser, stripDeniedFields, RoleAwareUser, DatabaseErrorParser, ParsedDbError |
+
+Firmas completas: [src/index.ts](src/index.ts).
+
+## Errores y límites
+
+Los errores de consulta son excepciones HTTP de Nest. `show()` lanza 404 si falta la fila.
+`DatabaseErrorParser` traduce códigos PostgreSQL/MySQL a 400, 409, 422 o 500; revisa los
+detalles del driver antes de exponerlos en producción.
+
+`exceljs`/`pdfkit` se cargan al exportar; si faltan, el error explica qué instalar y el
+CRUD sigue disponible. Los handlers genéricos no validan DTOs automáticamente. Configura
+DTOs/pipes propios y, si los necesitas, instala `class-validator`/`class-transformer`.
+`actionValidate()` devuelve éxito por defecto y debe sobrescribirse para reglas propias.
+
+No hay transacciones distribuidas entre conexiones. El registro de DataSources se
+rellena al crear servicios o mediante `registerDataSource`; si varias conexiones tienen
+la misma entidad puede ganar la primera registrada e inicializada. Evita esa ambigüedad.
+Los incrementos de caché no son atómicos entre procesos. Los dialectos PostgreSQL/MySQL
+requieren pruebas propias; la suite de regresión usa SQLite.
+Consulta [SECURITY.md](SECURITY.md) para límites de autorización y dependencias.
+
+## Build y pruebas
+
+```sh
+npm ci
+npm run check          # ESLint y tipos de código, ejemplos y tests
+npm test               # SQLite, Nest DI y release simulado
+npm run build          # limpia dist y genera JS + .d.ts con tsc
+npm run package:check  # inspección de npm pack --dry-run
+npm run test:package   # instalación aislada, CJS/ESM, tipos y HTTP
+npm pack               # tarball con build previo
 ```
 
-```typescript
-// main bootstrap (async factory so the Redis store is ready before the module)
-const cacheStore = await createRedisRgcStore();
+No se empaquetan NestJS/TypeORM. Solo se distribuyen JavaScript compilado, declaraciones,
+README, changelog y licencia. Fuentes, ejemplos, tests, mapas y configuración local
+quedan fuera mediante `files` y la inspección del contenido.
 
-@Module({
-  imports: [
-    GenericRestModule.forRoot({
-      config: { cache: { enabled: true } },
-      cacheStore, // ← Redis-backed; versioned invalidation works across processes
-    }),
-  ],
-})
-export class AppModule {}
+## Publicación
+
+```sh
+npm run release                 # publica la versión actual de package.json
+npm run release -- patch        # corrección compatible
+npm run release -- minor        # funcionalidad compatible
+npm run release -- major        # cambio incompatible
+npm run release -- --dry-run    # verifica sin versionar, publicar ni hacer push
 ```
 
-Any object implementing `RgcCacheStore` (`get/set/del`, sync **or** async) is
-accepted, so you can also wrap a raw `ioredis` client directly:
+Exige Git limpio, upstream sincronizado, validaciones correctas y versión/tag inéditos.
+El release real requiere autenticación y permiso NPM sobre `@charlietyn`, crea commit/tag,
+publica el tarball inspeccionado y sincroniza Git. Si NPM publica pero falla el push,
+informa que el paquete ya existe y no vuelve a publicarlo. CI únicamente valida.
+Recuperación, SemVer y OIDC: [CONTRIBUTING.md](CONTRIBUTING.md).
 
-```typescript
-import Redis from 'ioredis';
-const redis = new Redis();
-const cacheStore = {
-  get: async (k) => { const v = await redis.get(k); return v ? JSON.parse(v) : undefined; },
-  set: async (k, val, ttl) => { ttl ? await redis.set(k, JSON.stringify(val), 'EX', ttl) : await redis.set(k, JSON.stringify(val)); },
-  del: async (k) => { await redis.del(k); },
-};
-```
+## Contribuciones y licencia
 
----
-
-## ⚙️ Configuration (`GenericRestModule.forRoot`)
-
-```typescript
-{
-  filtering: {
-    maxDepth: 5,            // max nesting for oper/orderby
-    maxConditions: 100,     // max leaf conditions per request
-    strictRelations: true,  // require RELATIONS whitelist
-    allowedOperators: [...],
-  },
-  cache: {
-    enabled: false,
-    ttl: 60,
-    ttlByMethod: { list_all: 60, get_one: 30 },
-    cacheableMethods: ['list_all', 'get_one'],
-    varyHeaders: ['Accept-Language', 'X-Tenant-Id'],
-    prefix: 'rgc:v1',
-  },
-}
-```
-
----
-
-## 📤 Exports (Excel / PDF)
-
-Real file generation over the query. `exceljs` and `pdfkit` are **optional** —
-install them only if you use the export endpoints:
-
-```bash
-npm install exceljs pdfkit
-```
-
-Inherited endpoints return a downloadable `StreamableFile`:
-
-```
-GET /products/export/excel?select=["id","name","price"]&oper={"and":["price|>=|50"]}
-GET /products/export/pdf?orderby=[{"price":"desc"}]
-GET /products/export/data        # raw { data, columns } JSON (no extra deps)
-```
-
-Programmatic use:
-
-```typescript
-const { buffer, filename, mimeType } = await productService.exportExcel({ select: ['id', 'name'] });
-const pdf = await productService.exportPdf({ oper: { and: ['price|>=|100'] } }, { title: 'Premium products' });
-```
-
-Columns come from `?columns=` → `?select=` → the entity's columns (in that order),
-and support dotted relation paths (e.g. `category.name`).
-
-## 🔐 Role-based access & field restriction
-
-The NestJS equivalent of the original Spatie integration (`fieldsByRole` +
-`FilterRequestByRole`).
-
-**Endpoint protection** — `@Roles()` + `RolesGuard` (reads `request.user`, set it
-with your auth guard first; a `is_superuser` user bypasses all checks):
-
-```typescript
-import { Roles, RolesGuard } from 'nest-rest-generic-typeorm';
-
-@Controller('products')
-@UseGuards(AuthGuard('jwt'), RolesGuard)
-export class ProductController extends RestController<Product> {
-  constructor(service: ProductService) { super(service); }
-}
-```
-
-**Field-level write restriction** — declare which roles may write which fields on
-the entity. Fields the current user can't write are **silently stripped** from
-`POST`/`PUT` bodies (single or bulk) before persistence:
-
-```typescript
-@Entity('products')
-export class Product extends BaseEntity {
-  static readonly FIELDS_BY_ROLE = {
-    admin: ['status', 'is_featured'],
-    editor: ['status'],
-  };
-  // ...
-}
-```
-
-Roles are read from `request.user` as `roles: string[]`, `roles: [{name}]`,
-`role: 'x'` or `role: {name}`. Helpers `getDeniedFieldsForUser`,
-`extractUserRoles` and `stripDeniedFields` are exported for custom flows.
-
-## 🧱 Architecture
-
-```
-HTTP ──▶ RestController ──▶ BaseService ──▶ TypeormQueryTranslator ──▶ Repository ──▶ DB
-                │                │
-                │                ├── RgcCacheService   (versioned cache)
-                │                ├── HierarchyEngine   (tree building)
-                │                └── transactions      (manager.transaction)
-                └── DatabaseErrorParser (friendly errors)
-```
-
-The original library's PHP `oper` tree is translated to TypeORM `FindOptions` by expanding arbitrary AND/OR into **disjunctive normal form** (object = AND, array = OR), and relation filters become nested `where` objects. `relationLoadStrategy: 'query'` keeps pagination correct with to-many eager loads.
-
----
-
-## 🧪 Testing
-
-```bash
-npm test     # in-memory SQLite integration tests
-```
-
-## License
-
-MIT © Charlietyn
+Lee [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md) y [SECURITY.md](SECURITY.md).
+Se conserva **MIT © Charlietyn**, ya declarada por el proyecto; ver [LICENSE](LICENSE).

@@ -1,0 +1,45 @@
+# Ficheros que Codex no debe leer ni indexar en este repositorio.
+# Son artefactos generados, dependencias o salidas de herramientas: ocupan
+# contexto sin aportar información sobre el código fuente.
+
+# Dependencias
+node_modules/
+
+# Salida de compilación
+dist/
+*.tsbuildinfo
+
+# Artefactos de empaquetado npm
+*.tgz
+
+# Cobertura y resultados de tests
+coverage/
+.nyc_output/
+
+# Lockfiles (enormes y sin valor semántico)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Salida del grafo de conocimiento (graphify)
+graphify-out/
+
+# Bases de datos locales de prueba
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs y temporales
+*.log
+tmp/
+.tmp/
+.cache/
+
+# Configuración de editor / SO
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Control de versiones
+.git/

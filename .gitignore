@@ -6,3 +6,22 @@ coverage/
 *.sqlite
 .idea/
 .vscode/
+
+# Artefactos de empaquetado npm
+*.tgz
+
+# Salida del grafo de conocimiento (graphify)
+graphify-out/
+
+# Build incremental de TypeScript
+*.tsbuildinfo
+
+# Local credentials and private material
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx

@@ -3,7 +3,7 @@ import {
   DEFAULT_CONFIG,
   mergeConfig,
   REST_GENERIC_CONFIG,
-  RestGenericConfig,
+  RestGenericConfigInput,
 } from '../config/rest-generic.config';
 import {
   InMemoryCacheStore,
@@ -14,7 +14,7 @@ import {
 export const RGC_CACHE_STORE = 'RGC_CACHE_STORE';
 
 export interface GenericRestModuleOptions {
-  config?: Partial<RestGenericConfig>;
+  config?: RestGenericConfigInput;
   /** Provide a cache-manager store (or any RgcCacheStore). Defaults to in-memory. */
   cacheStore?: RgcCacheStore;
 }

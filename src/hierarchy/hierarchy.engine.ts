@@ -42,7 +42,7 @@ export class HierarchyEngine<T extends Record<string, unknown>> {
     if (hierarchy === true || hierarchy === 'true' || hierarchy === '1') {
       return { ...HIERARCHY_DEFAULTS };
     }
-    let cfg: unknown = typeof hierarchy === 'string' ? maybeJson(hierarchy) : hierarchy;
+    const cfg: unknown = typeof hierarchy === 'string' ? maybeJson(hierarchy) : hierarchy;
     if (!cfg || typeof cfg !== 'object') return null;
     const obj = cfg as HierarchyConfig;
     if (obj.enabled === false) return null;

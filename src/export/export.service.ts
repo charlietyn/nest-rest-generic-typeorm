@@ -44,7 +44,6 @@ function toCell(value: unknown): string | number | boolean | Date | null {
 
 function requireOptional<T = unknown>(name: string): T {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require(name) as T;
   } catch {
     throw new Error(

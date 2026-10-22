@@ -1,8 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+  And,
   Between,
+  EntityMetadata,
   Equal,
   FindManyOptions,
+  FindOperator,
   FindOptionsOrder,
   FindOptionsRelations,
   FindOptionsSelect,
@@ -24,7 +27,6 @@ import { RestGenericConfig } from '../config/rest-generic.config';
 import { FilterParams, OperNode } from '../interfaces/filter-params.interface';
 import {
   decodeValue,
-  isLogicalNode,
   maybeJson,
   parseConditionString,
   toBetweenArray,
@@ -197,7 +199,12 @@ export class TypeormQueryTranslator<T extends ObjectLiteral> {
       );
     }
 
-    const relationMeta = this.repo.metadata.relations.find((r) => r.propertyName === base);
+    // Resolve against the metadata of the CURRENT model, not the root repository —
+    // otherwise nested paths (`category.parent`, `user.roles`) look their second
+    // segment up on the root entity and are wrongly rejected.
+    const relationMeta = this.metadataFor(modelClass).relations.find(
+      (r) => r.propertyName === base,
+    );
     if (!relationMeta) {
       throw new BadRequestException(`Relation '${base}' does not exist on ${modelClass.name}.`);
     }
@@ -356,7 +363,10 @@ export class TypeormQueryTranslator<T extends ObjectLiteral> {
       if (!obj || typeof obj !== 'object') continue;
       for (const [column, dirRaw] of Object.entries(obj as Record<string, unknown>)) {
         const dir = String(dirRaw).toLowerCase() === 'desc' ? 'DESC' : 'ASC';
-        this.assignOrderPath(order as Record<string, unknown>, column.split('.'), dir);
+        const segments = column.split('.');
+        // Ordering crosses the same relation whitelist as filtering and loading.
+        if (segments.length > 1) this.validateOrderPath(segments);
+        this.assignOrderPath(order as Record<string, unknown>, segments, dir);
       }
     }
     return order;
@@ -371,10 +381,95 @@ export class TypeormQueryTranslator<T extends ObjectLiteral> {
     const out: WhereObject[] = [];
     for (const l of left) {
       for (const r of right) {
-        out.push({ ...l, ...r });
+        out.push(...this.conjoin(l, r));
       }
     }
     return out.length ? out : [{}];
+  }
+
+  /**
+   * AND two conjunction objects. A plain object spread would let the right-hand
+   * side overwrite a condition the left-hand side already placed on the same key,
+   * silently dropping it (`price >= 100 AND price <= 800` collapsing to
+   * `price <= 800`). Shared keys are therefore combined, and because combining
+   * may yield alternatives (an OR-list on one side distributes), the result is a
+   * DNF list rather than a single object.
+   */
+  private conjoin(left: WhereObject, right: WhereObject): WhereObject[] {
+    let variants: Record<string, unknown>[] = [{ ...(left as Record<string, unknown>) }];
+
+    for (const [key, value] of Object.entries(right as Record<string, unknown>)) {
+      if (value === undefined) continue;
+      const next: Record<string, unknown>[] = [];
+      for (const base of variants) {
+        if (base[key] === undefined) {
+          next.push({ ...base, [key]: value });
+          continue;
+        }
+        for (const combined of this.combineValues(base[key], value)) {
+          next.push({ ...base, [key]: combined });
+        }
+      }
+      variants = next;
+    }
+    return variants as WhereObject[];
+  }
+
+  /**
+   * Combine two conditions that landed on the same key. Returns one entry per
+   * alternative: OR-lists distribute, nested relation `where`s merge recursively,
+   * and two column conditions become a real conjunction via TypeORM's `And`.
+   */
+  private combineValues(a: unknown, b: unknown): unknown[] {
+    if (Array.isArray(a) || Array.isArray(b)) {
+      const left = Array.isArray(a) ? a : [a];
+      const right = Array.isArray(b) ? b : [b];
+      const out: unknown[] = [];
+      for (const l of left) {
+        for (const r of right) out.push(...this.combineValues(l, r));
+      }
+      return out;
+    }
+    if (this.isWhereObject(a) && this.isWhereObject(b)) {
+      return this.conjoin(a as WhereObject, b as WhereObject);
+    }
+    return [this.andConditions(a, b)];
+  }
+
+  /** Two conditions on one column → `And(...)`. Literals are lifted to `Equal`. */
+  private andConditions(a: unknown, b: unknown): unknown {
+    if (typeof And !== 'function') {
+      throw new BadRequestException(
+        'Combining two conditions on the same field requires the TypeORM `And` operator ' +
+          '(TypeORM >= 0.3.11). Upgrade TypeORM or split the conditions across separate requests.',
+      );
+    }
+    const left = a instanceof FindOperator ? a : Equal(a as any);
+    const right = b instanceof FindOperator ? b : Equal(b as any);
+    return And(left as FindOperator<any>, right as FindOperator<any>);
+  }
+
+  /** True for a nested relation `where` object (not a FindOperator or a Date). */
+  private isWhereObject(value: unknown): boolean {
+    return (
+      value !== null &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      !(value instanceof FindOperator) &&
+      !(value instanceof Date)
+    );
+  }
+
+  /** Entity metadata for an arbitrary model reachable from this connection. */
+  private metadataFor(modelClass: Function): EntityMetadata {
+    if (modelClass === this.repo.metadata.target) return this.repo.metadata;
+    try {
+      return this.repo.manager.connection.getMetadata(modelClass);
+    } catch {
+      throw new BadRequestException(
+        `Entity '${modelClass.name}' is not registered on this connection.`,
+      );
+    }
   }
 
   private normalizeOper(oper: unknown): OperNode | null {
@@ -424,21 +519,54 @@ export class TypeormQueryTranslator<T extends ObjectLiteral> {
   private collectFilterRelationPaths(oper: OperNode | null): string[] {
     if (!oper) return [];
     const paths: string[] = [];
-    const walk = (node: OperNode, prefix: string): void => {
+    const walk = (node: OperNode): void => {
       for (const [key, value] of Object.entries(node)) {
         if (key === 'and' || key === 'or') {
           const items = Array.isArray(value) ? value : [value];
+          // Walk every object entry: `walk` itself tells logical keys apart from
+          // relation keys, so skipping logical wrappers here would hide any
+          // relation filter nested inside an and/or block.
           items.forEach((it) => {
-            if (it && typeof it === 'object' && !isLogicalLeaf(it)) walk(it as OperNode, prefix);
+            if (it && typeof it === 'object') walk(it as OperNode);
           });
         } else if (value && typeof value === 'object') {
-          const path = prefix ? `${prefix}.${key}` : key;
-          paths.push(path);
+          // Only the base segment. TypeORM resolves the deeper chain of a nested
+          // `where` on its own; adding the full path here would additionally
+          // eager-load relations nobody requested and, on a self-referencing
+          // relation under `relationLoadStrategy: 'query'`, produce an ambiguous
+          // column alias.
+          paths.push(key.split('.')[0]);
         }
       }
     };
-    walk(oper, '');
+    walk(oper);
     return paths;
+  }
+
+  /**
+   * Gate every relation segment of a dotted `orderby` path against the model's
+   * `RELATIONS` whitelist, walking the chain so nested paths are checked on the
+   * entity that actually owns them. The trailing segment is the column.
+   */
+  private validateOrderPath(segments: string[]): void {
+    let modelClass = this.repo.metadata.target as Function;
+    for (const segment of segments.slice(0, -1)) {
+      const allowed = getDeclaredRelations(modelClass);
+      if (this.config.filtering.strictRelations && !allowed.includes(segment)) {
+        throw new BadRequestException(
+          `Relation '${segment}' is not allowed for ordering. Allowed relations: ${allowed.join(', ')}`,
+        );
+      }
+      const relationMeta = this.metadataFor(modelClass).relations.find(
+        (r) => r.propertyName === segment,
+      );
+      if (!relationMeta) {
+        throw new BadRequestException(
+          `Relation '${segment}' does not exist on ${modelClass.name}.`,
+        );
+      }
+      modelClass = relationMeta.inverseEntityMetadata.target as Function;
+    }
   }
 
   private validateRelationBase(rel: ParsedRelation, allowed: string[]): void {
@@ -506,8 +634,4 @@ export class TypeormQueryTranslator<T extends ObjectLiteral> {
   private toArray(value: unknown): unknown[] {
     return Array.isArray(value) ? value : [value];
   }
-}
-
-function isLogicalLeaf(item: unknown): boolean {
-  return item !== null && typeof item === 'object' && isLogicalNode(item as Record<string, unknown>);
 }

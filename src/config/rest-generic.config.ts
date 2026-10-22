@@ -65,16 +65,28 @@ export const DEFAULT_CONFIG: RestGenericConfig = {
   },
 };
 
-/** Deep-merge a partial user config onto the defaults. */
-export function mergeConfig(partial?: DeepPartial<RestGenericConfig>): RestGenericConfig {
+/**
+ * Merge a partial user config onto the defaults. Scalars and arrays are replaced;
+ * `ttlByMethod` is merged key-by-key so overriding one method's TTL does not drop
+ * the defaults for the others.
+ */
+export function mergeConfig(partial?: RestGenericConfigInput): RestGenericConfig {
   if (!partial) return clone(DEFAULT_CONFIG);
+  const cache = { ...DEFAULT_CONFIG.cache, ...(partial.cache ?? {}) } as CacheConfig;
+  cache.ttlByMethod = {
+    ...DEFAULT_CONFIG.cache.ttlByMethod,
+    ...(partial.cache?.ttlByMethod ?? {}),
+  };
   return {
     filtering: { ...DEFAULT_CONFIG.filtering, ...(partial.filtering ?? {}) } as FilteringConfig,
-    cache: { ...DEFAULT_CONFIG.cache, ...(partial.cache ?? {}) } as CacheConfig,
+    cache,
   };
 }
 
-type DeepPartial<T> = { [P in keyof T]?: T[P] extends object ? Partial<T[P]> : T[P] };
+export type RestGenericConfigInput = {
+  filtering?: Partial<FilteringConfig>;
+  cache?: Partial<CacheConfig>;
+};
 function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v));
 }

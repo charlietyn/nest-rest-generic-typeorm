@@ -13,6 +13,7 @@ import {
   CursorPaginatedResult,
   DataResult,
   PaginatedResult,
+  ValidationErrors,
   WriteResult,
 } from '../interfaces/service-result.interface';
 import { FilterParams, PaginationParams } from '../interfaces/filter-params.interface';
@@ -28,6 +29,9 @@ import {
   RoleAwareUser,
   stripDeniedFields,
 } from '../security/field-access';
+import { RelationManager } from '../relations/relation-manager';
+import { ResolvedRelationConfig } from '../relations/relation-config';
+import { registerDataSource } from '../relations/datasource-registry';
 
 /**
  * Generic base service. Concrete services inject their repository and pass it
@@ -61,6 +65,9 @@ export abstract class BaseService<T extends ObjectLiteral> {
     this.modelName =
       getStatic<string>(repo.metadata.target as Function, 'MODEL', '') ||
       (repo.metadata.target as Function).name;
+    // Register this entity's data source so cross-connection relations can resolve
+    // related/pivot repositories from the connection that actually owns them.
+    registerDataSource(repo.manager.connection);
   }
 
   // ==========================================================================
@@ -349,6 +356,92 @@ export abstract class BaseService<T extends ObjectLiteral> {
       this.primaryKey,
     );
     return engine.build([root as T & Record<string, unknown>], config);
+  }
+
+  // ==========================================================================
+  // RELATIONS (ManagesRelations port) — driven by the resolved relation config
+  // ==========================================================================
+
+  private _relationManager?: RelationManager<T>;
+
+  /** Lazily-built relation manager bound to this service's repository. */
+  protected get relations(): RelationManager<T> {
+    if (!this._relationManager) {
+      this._relationManager = new RelationManager<T>(this.repo, this.config);
+    }
+    return this._relationManager;
+  }
+
+  listRelation(config: ResolvedRelationConfig, parentId: unknown, params: FilterParams): Promise<unknown> {
+    return this.relations.list(config, parentId, params);
+  }
+
+  showRelation(config: ResolvedRelationConfig, parentId: unknown, relatedId: unknown, params: FilterParams): Promise<unknown> {
+    return this.relations.show(config, parentId, relatedId, params);
+  }
+
+  createRelation(
+    config: ResolvedRelationConfig,
+    parentId: unknown,
+    data: Record<string, unknown> | Record<string, unknown>[],
+    bulk: boolean,
+  ): Promise<WriteResult> {
+    return this.relations.create(config, parentId, data, bulk);
+  }
+
+  updateRelation(
+    config: ResolvedRelationConfig,
+    parentId: unknown,
+    relatedId: unknown,
+    data: Record<string, unknown> | Record<string, unknown>[],
+    bulk: boolean,
+  ): Promise<WriteResult> {
+    return this.relations.update(config, parentId, relatedId, data, bulk);
+  }
+
+  deleteRelation(
+    config: ResolvedRelationConfig,
+    parentId: unknown,
+    relatedId: unknown,
+    data: Record<string, unknown> | unknown[],
+    bulk: boolean,
+  ): Promise<WriteResult> {
+    return this.relations.delete(config, parentId, relatedId, data, bulk);
+  }
+
+  attachRelation(config: ResolvedRelationConfig, parentId: unknown, data: Record<string, unknown> | unknown[], scenario: string): Promise<unknown> {
+    return this.relations.attach(config, parentId, data, scenario);
+  }
+
+  detachRelation(config: ResolvedRelationConfig, parentId: unknown, relatedId: unknown, data: Record<string, unknown> | unknown[], bulk: boolean): Promise<unknown> {
+    return this.relations.detach(config, parentId, relatedId, data, bulk);
+  }
+
+  updatePivotRelation(
+    config: ResolvedRelationConfig,
+    parentId: unknown,
+    relatedId: unknown,
+    data: Record<string, unknown> | Record<string, unknown>[],
+    bulk: boolean,
+  ): Promise<unknown> {
+    return this.relations.updatePivot(config, parentId, relatedId, data, bulk);
+  }
+
+  // ==========================================================================
+  // VALIDATION HOOK (actionValidate) — validate without persisting
+  // ==========================================================================
+
+  /**
+   * Validate-only entry point. By the time a request reaches the controller the
+   * scenario-aware validation pipe has already run, so the default just echoes
+   * success. Override to add business-rule checks (uniqueness, existence, …)
+   * and return `{ success: false, errors }` to signal failure.
+   */
+  async actionValidate(
+    _scenario: string,
+    _data: Record<string, unknown>,
+  ): Promise<{ success: boolean; errors?: ValidationErrors }> {
+    return { success: true };
   }
 
   // ==========================================================================
